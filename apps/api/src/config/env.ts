@@ -77,6 +77,12 @@ const envSchema = z
     REDIS_URL: z.string().min(1, 'REDIS_URL is required'),
     QUEUE_PREFIX: z.string().default('reachinbox'),
 
+    /**
+     * Run the send worker inside the API process. Convenient for local dev and
+     * for the reviewer (one command boots everything); a real deployment sets
+     * this to false and scales `npm run start:worker` independently.
+     */
+    RUN_WORKER_IN_API: booleanish(true),
     WORKER_CONCURRENCY: z.coerce.number().int().min(1).max(1000).default(5),
     MIN_DELAY_BETWEEN_SENDS_MS: z.coerce.number().int().min(0).max(3_600_000).default(2000),
     MAX_ATTEMPTS: z.coerce.number().int().min(1).max(20).default(3),
