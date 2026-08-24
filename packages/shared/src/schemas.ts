@@ -53,7 +53,12 @@ export type Sender = z.infer<typeof senderSchema>;
 /** Live quota usage for the current hour window, surfaced in the UI. */
 export const senderQuotaSchema = senderSchema.extend({
   usedThisHour: z.number().int().nonnegative(),
+  /** Effective per-sender ceiling after sender and deployment limits are applied. */
   limitThisHour: z.number().int().positive(),
+  /** Global ceiling shared by every sender, and how much of it is spent. */
+  globalUsedThisHour: z.number().int().nonnegative(),
+  globalLimitThisHour: z.number().int().positive(),
+  /** ISO instant at which both counters reset. */
   windowResetsAt: z.string(),
 });
 export type SenderQuota = z.infer<typeof senderQuotaSchema>;
@@ -110,6 +115,10 @@ export const createCampaignResultSchema = z.object({
   invalidSkipped: z.array(z.string()),
   /** When the last email in this campaign is currently projected to go out. */
   projectedCompletionAt: z.string(),
+  /** How many hour windows the batch will span under the effective limit. */
+  windowsRequired: z.number().int(),
+  /** True when the hourly cap, not the requested delay, sets the pace. */
+  throttledByHourlyLimit: z.boolean(),
 });
 export type CreateCampaignResult = z.infer<typeof createCampaignResultSchema>;
 

@@ -38,6 +38,13 @@ export interface ParsedRecipients {
 const MAX_REPORTED_INVALID_LINES = 20;
 
 /**
+ * A leading `email,first_name` style row is the normal shape of an exported
+ * lead list, not a mistake. Recognising it keeps "1 line could not be read"
+ * from appearing on every well-formed upload.
+ */
+const HEADER_PATTERN = /^[^@]*\b(e-?mail|address|recipient)\b[^@]*$/i;
+
+/**
  * Extracts every email address from a raw CSV/TXT blob.
  *
  * Rather than parsing CSV structurally — which breaks on quoting, semicolon
@@ -52,16 +59,23 @@ export function parseRecipients(raw: string): ParsedRecipients {
   const emails: string[] = [];
   const invalidLines: string[] = [];
   let totalFound = 0;
+  let isFirstContentLine = true;
 
   for (const line of text.split('\n')) {
     const trimmed = line.trim();
     if (trimmed === '') continue;
+
+    const wasFirst = isFirstContentLine;
+    isFirstContentLine = false;
 
     // `matchAll` needs the regex reset between lines because it is /g.
     EMAIL_PATTERN.lastIndex = 0;
     const matches = trimmed.match(EMAIL_PATTERN);
 
     if (!matches) {
+      // A header row is expected, so it is skipped rather than reported.
+      if (wasFirst && HEADER_PATTERN.test(trimmed)) continue;
+
       if (invalidLines.length < MAX_REPORTED_INVALID_LINES) {
         invalidLines.push(trimmed.slice(0, 120));
       }
