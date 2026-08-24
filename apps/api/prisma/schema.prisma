@@ -1,0 +1,206 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// ReachInbox Email Scheduler — data model
+//
+// The database is the source of truth for *what* must be sent and *when*.
+// Redis/BullMQ is a rebuildable index over that truth: if Redis is wiped, the
+// reconciler replays these rows back into the queue (see scheduler/reconciler.ts).
+// ─────────────────────────────────────────────────────────────────────────────
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum EmailStatus {
+  SCHEDULED // future `scheduledAt`, delayed job exists in Redis
+  QUEUED // delay elapsed, waiting for a worker slot
+  PROCESSING // claimed by exactly one worker, SMTP handoff in flight
+  SENT // accepted by the SMTP server (terminal)
+  FAILED // retries exhausted, or bumped past MAX_RESCHEDULES (terminal)
+  CANCELLED // cancelled by the user before sending (terminal)
+}
+
+enum CampaignStatus {
+  SCHEDULED
+  RUNNING
+  COMPLETED
+  CANCELLED
+}
+
+model User {
+  id        String   @id @default(uuid())
+  /// Google's stable subject claim. Null for the demo/password login path.
+  googleSub String?  @unique
+  email     String   @unique
+  name      String
+  avatarUrl String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  campaigns  Campaign[]
+  emailJobs  EmailJob[]
+
+  @@map("users")
+}
+
+/// An SMTP identity emails are sent from. Provisioned against Ethereal by
+/// `scripts/provision-ethereal.ts`. Multiple senders let the scheduler spread
+/// load across independent hourly quotas.
+model Sender {
+  id        String  @id @default(uuid())
+  name      String
+  fromEmail String  @unique
+  smtpHost  String
+  smtpPort  Int
+  smtpSecure Boolean @default(false)
+  smtpUser  String
+  /// Ethereal accounts are disposable test inboxes, so the password is stored
+  /// as-is. A real deployment would hold a KMS reference here instead.
+  smtpPass  String
+  isActive  Boolean @default(true)
+  /// Per-sender hourly ceiling. Null falls back to MAX_EMAILS_PER_HOUR_PER_SENDER.
+  maxEmailsPerHour Int?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  campaigns Campaign[]
+  emailJobs EmailJob[]
+
+  @@index([isActive])
+  @@map("senders")
+}
+
+/// One submission of the Compose screen: the shared content plus the pacing
+/// knobs that were requested for this batch.
+model Campaign {
+  id       String @id @default(uuid())
+  userId   String
+  senderId String
+
+  subject  String
+  bodyHtml String @db.Text
+
+  /// When the first email in the batch is due.
+  startAt        DateTime
+  /// Requested gap between consecutive emails, baked into each row's
+  /// `scheduledAt` so the cadence survives a restart.
+  delayBetweenMs Int      @default(0)
+  /// Per-campaign hourly ceiling. Null falls back to the sender/global default.
+  hourlyLimit    Int?
+
+  totalRecipients Int            @default(0)
+  status          CampaignStatus @default(SCHEDULED)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sender      Sender       @relation(fields: [senderId], references: [id], onDelete: Restrict)
+  emailJobs   EmailJob[]
+  attachments Attachment[]
+
+  @@index([userId, createdAt])
+  @@index([status])
+  @@map("campaigns")
+}
+
+/// A single outbound email — the unit of scheduling, rate limiting and
+/// idempotency. One row maps 1:1 to one BullMQ job whose `jobId` is this `id`.
+model EmailJob {
+  id         String @id @default(uuid())
+  campaignId String
+  userId     String
+  senderId   String
+
+  toEmail  String
+  subject  String
+  bodyHtml String @db.Text
+
+  /// Position within the campaign. Drives the send cadence and preserves
+  /// ordering when a batch is bumped into a later hour window.
+  seq Int
+
+  /// When this email is due. Authoritative across restarts — the reconciler
+  /// rebuilds the Redis delay from this column, never the other way round.
+  scheduledAt DateTime
+  status      EmailStatus @default(SCHEDULED)
+
+  attempts    Int @default(0)
+  maxAttempts Int @default(3)
+  /// Set when a worker claims the row; used to detect abandoned work after a
+  /// hard crash (see STALE_LOCK_MS).
+  lockedAt    DateTime?
+  /// Identifies which worker holds the claim, for debugging concurrent runs.
+  lockedBy    String?
+
+  sentAt     DateTime?
+  /// SMTP message id returned on acceptance — evidence of a real delivery.
+  messageId  String?
+  /// Ethereal's web preview URL for the delivered message.
+  previewUrl String?
+  lastError  String?   @db.Text
+
+  /// How many times the hourly quota pushed this into a later window.
+  rescheduleCount Int @default(0)
+
+  isStarred Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  campaign Campaign    @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  user     User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sender   Sender      @relation(fields: [senderId], references: [id], onDelete: Restrict)
+  events   EmailEvent[]
+
+  /// Idempotency at the domain level: the same address cannot be enqueued
+  /// twice within one campaign, even if the uploaded list repeats it.
+  @@unique([campaignId, toEmail])
+  /// Drives the reconciler's "what is still outstanding?" scan.
+  @@index([status, scheduledAt])
+  @@index([userId, status, scheduledAt])
+  @@index([senderId, status])
+  @@index([campaignId, seq])
+  @@map("email_jobs")
+}
+
+/// Append-only audit of every state transition.
+///
+/// This is what makes "an email was never sent twice" a verifiable claim rather
+/// than an assertion: a duplicate delivery would show two SENT rows for one job.
+model EmailEvent {
+  id         String      @id @default(uuid())
+  emailJobId String
+  status     EmailStatus
+  message    String?     @db.Text
+  /// Worker identity, so concurrent processing can be traced.
+  actor      String?
+  createdAt  DateTime    @default(now())
+
+  emailJob EmailJob @relation(fields: [emailJobId], references: [id], onDelete: Cascade)
+
+  @@index([emailJobId, createdAt])
+  @@index([status, createdAt])
+  @@map("email_events")
+}
+
+model Attachment {
+  id          String @id @default(uuid())
+  campaignId  String
+  filename    String
+  mimeType    String
+  size        Int
+  storagePath String
+
+  createdAt DateTime @default(now())
+
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@index([campaignId])
+  @@map("attachments")
+}
