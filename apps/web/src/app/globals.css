@@ -1,0 +1,78 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+  }
+
+  body {
+    @apply bg-white text-ink;
+  }
+
+  /* Focus is visible everywhere, but only for keyboard users — a green ring
+     around every clicked button would fight the design. */
+  :focus-visible {
+    @apply outline-none ring-2 ring-primary/40 ring-offset-1;
+  }
+}
+
+@layer components {
+  /**
+   * The message body, in the detail view and in the compose editor.
+   *
+   * User-authored HTML arrives with Tailwind's preflight having stripped all
+   * default element styling, so headings and lists would otherwise render as
+   * undifferentiated paragraphs. These rules put that styling back, scoped to
+   * message content only.
+   */
+  .rich-text {
+    @apply text-[15px] leading-relaxed text-ink;
+  }
+  .rich-text p {
+    @apply my-3;
+  }
+  .rich-text h1 {
+    @apply my-4 text-2xl font-semibold;
+  }
+  .rich-text h2 {
+    @apply my-4 text-xl font-semibold;
+  }
+  .rich-text h3 {
+    @apply my-3 text-lg font-semibold;
+  }
+  .rich-text ul {
+    @apply my-3 list-disc pl-6;
+  }
+  .rich-text ol {
+    @apply my-3 list-decimal pl-6;
+  }
+  .rich-text li {
+    @apply my-1;
+  }
+  .rich-text blockquote {
+    @apply my-3 border-l-4 border-line pl-4 italic text-ink/70;
+  }
+  .rich-text a {
+    @apply text-primary underline underline-offset-2;
+  }
+  .rich-text strong {
+    @apply font-semibold;
+  }
+  .rich-text code {
+    @apply rounded bg-neutral-soft px-1.5 py-0.5 font-mono text-[13px];
+  }
+  .rich-text img {
+    @apply my-3 max-w-full rounded-field;
+  }
+  .rich-text hr {
+    @apply my-5 border-line;
+  }
+
+  /* Tiptap renders the placeholder as a data attribute on the first empty
+     paragraph rather than using a native placeholder. */
+  .rich-text p.is-editor-empty:first-child::before {
+    @apply pointer-events-none float-left h-0 text-muted content-[attr(data-placeholder)];
+  }
+}
