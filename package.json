@@ -1,0 +1,39 @@
+{
+  "name": "reachinbox-scheduler",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Production-grade email scheduler service + dashboard (BullMQ + Redis + Postgres + Next.js)",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "npm run dev --workspaces --if-present",
+    "dev:api": "npm run dev -w @reachinbox/api",
+    "dev:worker": "npm run dev:worker -w @reachinbox/api",
+    "dev:web": "npm run dev -w @reachinbox/web",
+    "build": "npm run build -w @reachinbox/shared && npm run build -w @reachinbox/api && npm run build -w @reachinbox/web",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "test": "npm run test -w @reachinbox/api",
+    "db:migrate": "npm run db:migrate -w @reachinbox/api",
+    "db:reset": "npm run db:reset -w @reachinbox/api",
+    "db:studio": "npm run db:studio -w @reachinbox/api",
+    "provision:ethereal": "npm run provision:ethereal -w @reachinbox/api",
+    "load-test": "npm run load-test -w @reachinbox/api",
+    "e2e": "npm run e2e -w @reachinbox/api",
+    "services:up": "bash scripts/dev-services.sh up",
+    "services:status": "bash scripts/dev-services.sh status"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.10",
+    "prettier": "^3.3.3",
+    "typescript": "^5.5.4"
+  },
+  "overrides": {
+    "uuid": "^11.1.1"
+  }
+}
