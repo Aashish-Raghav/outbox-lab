@@ -1,3 +1,4 @@
+import { join } from 'node:path';
 import type { Config } from 'tailwindcss';
 
 /**
@@ -9,7 +10,10 @@ import type { Config } from 'tailwindcss';
  * one-line change here rather than a search-and-replace.
  */
 const config: Config = {
-  content: ['./src/**/*.{ts,tsx}'],
+  // Absolute, because `content` globs are resolved against the process cwd. A
+  // build launched from the monorepo root would otherwise match nothing and
+  // emit a stylesheet containing only preflight.
+  content: [join(__dirname, 'src/**/*.{ts,tsx}')],
   theme: {
     extend: {
       colors: {
