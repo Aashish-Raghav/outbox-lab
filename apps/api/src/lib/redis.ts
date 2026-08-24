@@ -15,8 +15,19 @@ const baseOptions: RedisOptions = {
   retryStrategy: (attempt) => Math.min(attempt * 200, 5000),
 };
 
+/**
+ * Every connection this module hands out.
+ *
+ * BullMQ does not close a connection it was given rather than asked to create,
+ * so without this register the queue and worker sockets outlive `close()` and
+ * hold the event loop open — a graceful shutdown would quietly degrade into the
+ * force-exit backstop, and a CLI script would simply never return.
+ */
+const connections = new Set<Redis>();
+
 export function createRedisConnection(role: string): Redis {
   const connection = new Redis(env.REDIS_URL, baseOptions);
+  connections.add(connection);
 
   connection.on('error', (error: Error) => {
     // Reconnection is automatic; log at warn so a transient blip is visible
@@ -24,6 +35,7 @@ export function createRedisConnection(role: string): Redis {
     log.warn({ role, err: error.message }, 'redis connection error');
   });
   connection.on('ready', () => log.debug({ role }, 'redis ready'));
+  connection.on('end', () => connections.delete(connection));
 
   return connection;
 }
@@ -81,6 +93,22 @@ export async function checkRedisDurability(): Promise<{ ok: boolean; warnings: s
   return { ok: warnings.length === 0, warnings };
 }
 
+/**
+ * Closes every connection, not just the shared application one.
+ *
+ * `quit()` waits for in-flight commands to finish, which is what we want on a
+ * graceful shutdown. If one refuses to close — a socket already half-dead, say —
+ * it is torn down rather than allowed to block the exit.
+ */
 export async function disconnectRedis(): Promise<void> {
-  await redis.quit();
+  await Promise.all(
+    [...connections].map(async (connection) => {
+      try {
+        await connection.quit();
+      } catch {
+        connection.disconnect();
+      }
+    }),
+  );
+  connections.clear();
 }
