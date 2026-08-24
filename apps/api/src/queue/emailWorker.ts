@@ -322,10 +322,16 @@ async function deferToNextWindow(
     throw new UnrecoverableError(`Job ${row.id} exhausted its reschedule budget`);
   }
 
-  const targetMs = Math.max(
-    now + retryAfterMs,
-    rescheduleTarget({ now, seq: row.seq, minDelayMs: env.MIN_DELAY_BETWEEN_SENDS_MS }),
-  );
+  // Derived purely from (window, seq), never from elapsed time. An earlier
+  // version took `max(now + retryAfterMs, ...)`, but `retryAfterMs` is measured
+  // inside `reserve()` a few milliseconds before this line runs, so each
+  // concurrently-deferred job picked up a slightly different drift and the batch
+  // came out of the next window in a scrambled order.
+  const targetMs = rescheduleTarget({
+    now,
+    seq: row.seq,
+    minDelayMs: env.MIN_DELAY_BETWEEN_SENDS_MS,
+  });
   const target = new Date(targetMs);
 
   await release(row.id, target);
@@ -340,7 +346,7 @@ async function deferToNextWindow(
   );
 
   log.info(
-    { emailJobId: row.id, scope, target: target.toISOString(), seq: row.seq },
+    { emailJobId: row.id, scope, target: target.toISOString(), seq: row.seq, retryAfterMs },
     'hourly quota reached, deferred to next window',
   );
 
