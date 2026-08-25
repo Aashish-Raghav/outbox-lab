@@ -146,7 +146,14 @@ export function EmailDetail({ id }: { id: string }) {
             className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-primary-soft px-3 py-1.5 text-xs font-medium text-primary transition-colors hover:bg-primary-softHover"
           >
             <ExternalLinkIcon className="text-sm" />
-            View the delivered message on Ethereal
+            {/*
+              Not "delivered". Ethereal is a fake SMTP service: it completes the
+              handshake, returns a real message id, captures the message in its
+              own web inbox and then discards it. Nothing reaches the
+              recipient's real mailbox, and calling this "delivered" sends
+              people hunting through an inbox that will never contain it.
+            */}
+            View the captured message on Ethereal
           </a>
         )}
 
