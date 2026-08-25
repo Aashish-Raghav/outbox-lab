@@ -13,6 +13,7 @@
  */
 import { spawn } from 'node:child_process';
 import { readFileSync, existsSync } from 'node:fs';
+import { createServer } from 'node:net';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
 
@@ -72,15 +73,39 @@ function pipe(name, stream) {
   });
 }
 
+/**
+ * `detached: true` makes each child a process-group leader, so shutdown can
+ * signal the whole group.
+ *
+ * Without it, `npm run dev -w web` is three processes deep — npm, then `sh -c
+ * next dev`, then the actual `next-server` — and signalling only the child we
+ * hold a handle to leaves `next-server` orphaned and still holding :3000. The
+ * next `npm run dev` then dies with EADDRINUSE from a server nothing appears to
+ * own.
+ */
 function run(name, args) {
   const child = spawn(npm, args, {
     cwd: root,
     env: childEnv,
+    detached: true,
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   pipe(name, child.stdout);
   pipe(name, child.stderr);
   return child;
+}
+
+/** Signals a child's entire process group, tolerating one that already exited. */
+function killTree(child, signal) {
+  try {
+    process.kill(-child.pid, signal);
+  } catch {
+    try {
+      child.kill(signal);
+    } catch {
+      // Already gone. Nothing to do.
+    }
+  }
 }
 
 async function buildShared() {
@@ -96,6 +121,35 @@ async function buildShared() {
     process.exit(code ?? 1);
   }
 }
+
+/**
+ * Fails with a readable message instead of Next's raw EADDRINUSE stack, which
+ * says nothing about what to do next — usually "a previous `npm run dev` is
+ * still running in another terminal".
+ */
+async function checkPort(port, who) {
+  const free = await new Promise((done) => {
+    const probe = createServer();
+    probe.once('error', () => done(false));
+    probe.once('listening', () => probe.close(() => done(true)));
+    // No host: Node binds dual-stack `::`, so this collides with an existing
+    // listener whether it took the IPv4 or the IPv6 address. Naming a host
+    // would miss half the cases — Next binds `::`, the API binds 0.0.0.0.
+    probe.listen(port);
+  });
+
+  if (!free) {
+    process.stdout.write(
+      `${label('dev')} port ${port} is already in use, so the ${who} cannot start.\n` +
+        `${label('dev')} Another \`npm run dev\` is probably running. Stop it, or:\n` +
+        `${label('dev')}   pkill -f dev.mjs\n`,
+    );
+    process.exit(1);
+  }
+}
+
+await checkPort(Number(childEnv.PORT ?? 4000), 'API');
+await checkPort(3000, 'dashboard');
 
 await buildShared();
 
@@ -115,8 +169,14 @@ function shutdown(reason) {
   if (shuttingDown) return;
   shuttingDown = true;
   process.stdout.write(`\n${label('dev')} ${reason} — stopping\n`);
-  for (const child of children) child.kill('SIGTERM');
-  setTimeout(() => process.exit(0), 3000).unref();
+  for (const child of children) killTree(child, 'SIGTERM');
+
+  // Anything still alive after the grace period gets SIGKILL, so a wedged Next
+  // build cannot leave :3000 occupied after this process is gone.
+  setTimeout(() => {
+    for (const child of children) killTree(child, 'SIGKILL');
+    process.exit(0);
+  }, 3000).unref();
 }
 
 for (const child of children) {
