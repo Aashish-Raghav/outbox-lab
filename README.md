@@ -34,7 +34,14 @@ job anywhere in the system.
 
 Deeper documents: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) ·
 [docs/API.md](docs/API.md) · [docs/DEMO_SCRIPT.md](docs/DEMO_SCRIPT.md) ·
-[docs/ASSUMPTIONS.md](docs/ASSUMPTIONS.md)
+[docs/ASSUMPTIONS.md](docs/ASSUMPTIONS.md) ·
+[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)
+
+**Running live** — dashboard at
+<https://reachinbox-web-522727866437.us-central1.run.app>, API health at
+<https://reachinbox-api-522727866437.us-central1.run.app/api/health>. Deployed to
+Cloud Run; see [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for the topology and the
+teardown script.
 
 ---
 

@@ -1,0 +1,18 @@
+# Everything the build reinstalls or regenerates itself. Without this the build
+# context is ~177MB of node_modules and .git, which Cloud Build has to upload
+# before it can start.
+node_modules
+**/node_modules
+.git
+.next
+**/.next
+dist
+**/dist
+uploads
+**/uploads
+
+# Never let a real secret into a layer. The deployed config comes from Cloud Run
+# env vars, not from a file in the image.
+.env
+.env.*
+!.env.example

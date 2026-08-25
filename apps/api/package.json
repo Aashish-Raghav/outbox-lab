@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "dev:worker": "tsx watch src/worker.ts",
-    "build": "tsc -p tsconfig.json",
+    "//build": "tsc emits only JavaScript, so the Lua rate-limiter script is not copied. Dev runs from src/ via tsx and never noticed; `npm start` off a real build fails at boot with ENOENT on dist/ratelimit/hourly-quota.lua.",
+    "build": "tsc -p tsconfig.json && mkdir -p dist/ratelimit && cp src/ratelimit/*.lua dist/ratelimit/",
     "start": "node dist/index.js",
     "start:worker": "node dist/worker.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
