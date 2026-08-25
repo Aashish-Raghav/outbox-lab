@@ -145,16 +145,16 @@ Real OAuth, not a mock. Two minutes:
 1. <https://console.cloud.google.com/apis/credentials> → **Create credentials** → **OAuth client
    ID** → application type **Web application**.
 2. Under **Authorized JavaScript origins** add `http://localhost:3000`.
-3. Copy the **Client ID** into `.env`:
+3. Copy the **Client ID** into `.env` — one variable, on the server only:
 
    ```dotenv
    GOOGLE_CLIENT_ID=xxxxxxxx.apps.googleusercontent.com
-   NEXT_PUBLIC_GOOGLE_CLIENT_ID=xxxxxxxx.apps.googleusercontent.com
    ```
 
-4. Restart both processes. The login card picks the Google button up automatically — it renders
-   from `GET /api/auth/config`, so the button is never shown when the server could not verify a
-   token anyway.
+4. Restart the API. The login card picks the Google button up automatically: it reads the client
+   id from `GET /api/auth/config` at runtime, so there is no `NEXT_PUBLIC_*` twin to keep in sync,
+   nothing is baked into the bundle at build time, and the button is never rendered when the
+   server could not verify a token anyway.
 
 This uses the Google Identity Services **ID-token** flow, so there is **no client secret** and no
 redirect URI to configure. The browser receives a signed JWT from Google; the backend verifies it
@@ -213,7 +213,7 @@ below is hardcoded anywhere in the source. `.env.example` is the annotated maste
 | `JWT_SECRET` / `JWT_EXPIRES_IN` | dev value / `7d` | Session cookie signing. Must be changed outside development. |
 | `ALLOW_PASSWORD_LOGIN` / `DEMO_USER_EMAIL` / `DEMO_USER_PASSWORD` | `true` / `demo@reachinbox.ai` / `demo1234` | Demo login. Refused in production. |
 | `MAX_UPLOAD_BYTES` / `MAX_RECIPIENTS_PER_CAMPAIGN` / `UPLOAD_DIR` | `5 MiB` / `5000` / `./uploads` | Upload guards. |
-| `NEXT_PUBLIC_API_URL` / `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | localhost / — | Frontend build-time config. |
+| `API_ORIGIN` | `http://localhost:4000` | Where Next proxies `/api/*`. The only frontend variable — see [Google OAuth setup](#google-oauth-setup). |
 
 ---
 

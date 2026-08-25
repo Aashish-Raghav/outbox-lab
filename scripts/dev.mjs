@@ -12,11 +12,44 @@
  * up front, and only then do the three long-running processes start.
  */
 import { spawn } from 'node:child_process';
+import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { dirname, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+
+/**
+ * The repo keeps one `.env` at the root so the API, the worker and the scripts
+ * cannot drift apart. Next, however, only reads `.env` files inside `apps/web`,
+ * so without this the dashboard would silently ignore the root file — most
+ * visibly `API_ORIGIN`, which is where it proxies `/api/*`.
+ *
+ * Values already in the real environment win, matching the API's own loader,
+ * so `API_ORIGIN=… npm run dev` still overrides the file.
+ */
+function rootEnv() {
+  const file = join(root, '.env');
+  if (!existsSync(file)) return { ...process.env };
+
+  const merged = {};
+  for (const line of readFileSync(file, 'utf8').split('\n')) {
+    const match = /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$/.exec(line);
+    if (!match) continue;
+
+    let value = match[2];
+    const quoted =
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"));
+    if (quoted && value.length >= 2) value = value.slice(1, -1);
+
+    merged[match[1]] = value;
+  }
+
+  return { ...merged, ...process.env };
+}
+
+const childEnv = rootEnv();
 
 const COLOURS = { shared: '\x1b[35m', api: '\x1b[36m', web: '\x1b[32m' };
 const RESET = '\x1b[0m';
@@ -40,7 +73,11 @@ function pipe(name, stream) {
 }
 
 function run(name, args) {
-  const child = spawn(npm, args, { cwd: root, stdio: ['ignore', 'pipe', 'pipe'] });
+  const child = spawn(npm, args, {
+    cwd: root,
+    env: childEnv,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
   pipe(name, child.stdout);
   pipe(name, child.stderr);
   return child;
