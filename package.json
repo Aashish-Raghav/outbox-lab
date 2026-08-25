@@ -11,7 +11,9 @@
     "node": ">=20"
   },
   "scripts": {
-    "dev": "npm run dev --workspaces --if-present",
+    "//prepare": "Runs automatically after `npm install`. The API resolves @reachinbox/shared to its built dist, so a fresh clone needs this before anything will start.",
+    "prepare": "npm run build -w @reachinbox/shared && npm run db:generate -w @reachinbox/api",
+    "dev": "node scripts/dev.mjs",
     "dev:api": "npm run dev -w @reachinbox/api",
     "dev:worker": "npm run dev:worker -w @reachinbox/api",
     "dev:web": "npm run dev -w @reachinbox/web",

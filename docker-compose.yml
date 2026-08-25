@@ -1,0 +1,74 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Infrastructure for the ReachInbox email scheduler: PostgreSQL + Redis.
+#
+#   docker compose up -d
+#   npm run db:migrate && npm run provision:ethereal
+#   npm run dev
+#
+# Why only the datastores and not the app itself:
+#
+# Docker was not available in the environment this project was built and
+# verified in, so an `api`/`worker`/`web` image here would be untested code
+# shipped as if it worked. The two services below are configuration, not code —
+# they are the same images and flags the app was actually developed against, and
+# the two Redis flags in particular are load-bearing rather than cosmetic:
+#
+#   * `--appendonly yes`           delayed jobs survive a Redis restart. Without
+#                                  AOF, an unlucky restart loses the in-Redis
+#                                  schedule. (The reconciler rebuilds it from
+#                                  Postgres either way — AOF just means it has
+#                                  nothing to rebuild.)
+#   * `--maxmemory-policy noeviction`
+#                                  a memory ceiling must never silently evict a
+#                                  queued email. The default `volatile-lru`
+#                                  would drop scheduled sends under pressure and
+#                                  report nothing.
+#
+# `scripts/dev-services.sh` brings the same two up from distro packages for
+# anyone without Docker.
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: reachinbox-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: reachinbox
+      POSTGRES_PASSWORD: reachinbox
+      POSTGRES_DB: reachinbox
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      # Creates the second database the integration suite truncates between
+      # tests, so `npm test` works without a manual createdb.
+      - ./scripts/init-test-db.sql:/docker-entrypoint-initdb.d/10-test-db.sql:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U reachinbox -d reachinbox']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: reachinbox-redis
+    restart: unless-stopped
+    command: >
+      redis-server
+      --appendonly yes
+      --appendfsync everysec
+      --maxmemory-policy noeviction
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  postgres-data:
+  redis-data:
